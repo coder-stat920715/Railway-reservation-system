@@ -1,0 +1,95 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+  cloud:
+    gateway:
+      metrics:
+        enabled: true
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            key-resolver: "#{@ipKeyResolver}"
+            redis-rate-limiter.replenishRate: 50
+            redis-rate-limiter.burstCapacity: 100
+            redis-rate-limiter.requestedTokens: 1
+            deny-empty-key: false
+      routes:
+        - id: train-catalog-service
+          uri: lb://train-catalog-service
+          predicates:
+            - Path=/api/catalog/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: catalogCB
+                fallbackUri: forward:/fallback/catalog
+            - name: Retry
+              args:
+                retries: 3
+                methods: GET
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 500ms
+                  factor: 2
+        - id: fare-service
+          uri: lb://fare-service
+          predicates:
+            - Path=/api/fares/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: fareCB
+                fallbackUri: forward:/fallback/fare
+        - id: booking-command-service
+          uri: lb://booking-command-service
+          predicates:
+            - Path=/api/bookings/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: bookingCB
+                fallbackUri: forward:/fallback/booking
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/payments/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: paymentCB
+                fallbackUri: forward:/fallback/payment
+        - id: booking-query-service
+          uri: lb://booking-query-service
+          predicates:
+            - Path=/api/query/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: queryCB
+                fallbackUri: forward:/fallback/query
+            - name: Retry
+              args:
+                retries: 3
+                methods: GET
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+  instance:
+    prefer-ip-address: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway
+  metrics:
+    tags:
+      application: ${spring.application.name}

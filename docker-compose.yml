@@ -1,0 +1,221 @@
+name: railway-reservation-system
+
+x-java-env: &java-env
+  EUREKA_URL: http://eureka-server:8761/eureka
+  DB_HOST: postgres
+  DB_USER: railway
+  DB_PASSWORD: railway
+  KAFKA_BOOTSTRAP: kafka:29092
+  REDIS_HOST: redis
+
+x-java-service: &java-service
+  restart: unless-stopped
+  environment: *java-env
+  networks: [railway-net]
+  depends_on:
+    postgres:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    eureka-server:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_wal_senders=10", "-c", "max_replication_slots=10"]
+    environment:
+      POSTGRES_USER: railway
+      POSTGRES_PASSWORD: railway
+      POSTGRES_DB: postgres
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U railway -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [railway-net]
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [railway-net]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    networks: [railway-net]
+
+  debezium:
+    image: quay.io/debezium/connect:2.7
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports: ["8089:8083"]
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: debezium-connect
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/connectors > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks: [railway-net]
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [railway-net]
+
+  eureka-server:
+    build: { context: ., args: { MODULE: eureka-server } }
+    image: railway/eureka-server:1.0.0
+    ports: ["8761:8761"]
+    environment:
+      EUREKA_HOSTNAME: eureka-server
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks: [railway-net]
+
+  api-gateway:
+    build: { context: ., args: { MODULE: api-gateway } }
+    image: railway/api-gateway:1.0.0
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    environment: *java-env
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks: [railway-net]
+
+  train-catalog-service:
+    <<: *java-service
+    build: { context: ., args: { MODULE: train-catalog-service } }
+    image: railway/train-catalog-service:1.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  fare-service:
+    <<: *java-service
+    build: { context: ., args: { MODULE: fare-service } }
+    image: railway/fare-service:1.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  booking-command-service:
+    <<: *java-service
+    build: { context: ., args: { MODULE: booking-command-service } }
+    image: railway/booking-command-service:1.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  payment-service:
+    <<: *java-service
+    build: { context: ., args: { MODULE: payment-service } }
+    image: railway/payment-service:1.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8084/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  booking-query-service:
+    <<: *java-service
+    build: { context: ., args: { MODULE: booking-query-service } }
+    image: railway/booking-query-service:1.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8085/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # One-shot job: registers the Debezium outbox connectors once the outbox tables exist (Flyway has run).
+  connector-init:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      debezium:
+        condition: service_healthy
+      booking-command-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+    environment:
+      CONNECT_URL: http://debezium:8083
+      DB_HOST: postgres
+      DB_USER: railway
+      DB_PASSWORD: railway
+    volumes:
+      - ./scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/create-debezium-connector.sh"]
+    restart: "no"
+    networks: [railway-net]
+
+networks:
+  railway-net:
+    driver: bridge
+
+volumes:
+  pgdata:

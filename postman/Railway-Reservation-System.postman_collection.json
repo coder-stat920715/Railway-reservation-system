@@ -1,0 +1,2832 @@
+{
+  "info": {
+    "name": "Railway Reservation System",
+    "description": "End-to-end tests for the Railway Reservation microservices. All business calls go through the API gateway (default http://localhost:8080). Run folders in numeric order. Collection variables are filled automatically by test scripts. See TESTING_GUIDE.md for the full walkthrough.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Infrastructure checks",
+      "description": "Run these first. Everything must be UP/RUNNING before testing business flows.",
+      "item": [
+        {
+          "name": "Eureka - registered services",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const apps = pm.response.json().applications.application.map(a => a.name);",
+                  "['API-GATEWAY','TRAIN-CATALOG-SERVICE','FARE-SERVICE','BOOKING-COMMAND-SERVICE','PAYMENT-SERVICE','BOOKING-QUERY-SERVICE']",
+                  "  .forEach(n => pm.test(n + ' registered', () => pm.expect(apps).to.include(n)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{eurekaUrl}}/eureka/apps",
+              "host": [
+                "{{eurekaUrl}}"
+              ],
+              "path": [
+                "eureka",
+                "apps"
+              ]
+            },
+            "description": "Expect 6 apps registered: API-GATEWAY, TRAIN-CATALOG-SERVICE, FARE-SERVICE, BOOKING-COMMAND-SERVICE, PAYMENT-SERVICE, BOOKING-QUERY-SERVICE."
+          }
+        },
+        {
+          "name": "Gateway - health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Gateway is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Gateway - routes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('5 routes', () => pm.expect(pm.response.json().length).to.be.at.least(5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/gateway/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "gateway",
+                "routes"
+              ]
+            },
+            "description": "Lists the 5 configured routes (catalog, fare, booking, payment, query)."
+          }
+        },
+        {
+          "name": "Debezium - list connectors",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const c = pm.response.json();",
+                  "pm.test('booking connector registered', () => pm.expect(c).to.include('booking-outbox-connector'));",
+                  "pm.test('payment connector registered', () => pm.expect(c).to.include('payment-outbox-connector'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{connectUrl}}/connectors",
+              "host": [
+                "{{connectUrl}}"
+              ],
+              "path": [
+                "connectors"
+              ]
+            },
+            "description": "Must contain booking-outbox-connector and payment-outbox-connector (registered by the connector-init container)."
+          }
+        },
+        {
+          "name": "Debezium - booking connector status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test('connector RUNNING', () => pm.expect(s.connector.state).to.eql('RUNNING'));",
+                  "pm.test('task RUNNING', () => pm.expect(s.tasks[0].state).to.eql('RUNNING'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{connectUrl}}/connectors/booking-outbox-connector/status",
+              "host": [
+                "{{connectUrl}}"
+              ],
+              "path": [
+                "connectors",
+                "booking-outbox-connector",
+                "status"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Debezium - payment connector status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test('connector RUNNING', () => pm.expect(s.connector.state).to.eql('RUNNING'));",
+                  "pm.test('task RUNNING', () => pm.expect(s.tasks[0].state).to.eql('RUNNING'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{connectUrl}}/connectors/payment-outbox-connector/status",
+              "host": [
+                "{{connectUrl}}"
+              ],
+              "path": [
+                "connectors",
+                "payment-outbox-connector",
+                "status"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Train Catalog (via gateway)",
+      "description": "Reads seeded data, then creates a new train with coaches, seats and routes.",
+      "item": [
+        {
+          "name": "List train types",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('seeded types present', () => pm.expect(j.map(t => t.name)).to.include.members(['EXPRESS','SUPERFAST','RAJDHANI']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/train-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "train-types"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List coach types",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('seeded coach types present', () => pm.expect(j.map(t => t.name)).to.include.members(['SLEEPER','AC3','AC2']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/coach-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "coach-types"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List trains (saves trainId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json().find(x => x.trainNumber === '12951');",
+                  "pm.test('Mumbai Rajdhani 12951 exists', () => pm.expect(t).to.not.be.undefined);",
+                  "pm.collectionVariables.set('trainId', t.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get train",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('train number', () => pm.expect(pm.response.json().trainNumber).to.eql('12951'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{trainId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{trainId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List coaches of train (saves coachId = A1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('3 coaches seeded', () => pm.expect(j.length).to.eql(3));",
+                  "pm.collectionVariables.set('coachId', j.find(c => c.coachNumber === 'A1').id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{trainId}}/coaches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{trainId}}",
+                "coaches"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List seats of coach A1 (saves seatId, seatId2, seatId3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('AC3 coach has 64 seats', () => pm.expect(j.length).to.eql(64));",
+                  "pm.collectionVariables.set('seatId', j[0].id);",
+                  "pm.collectionVariables.set('seatId2', j[1].id);",
+                  "pm.collectionVariables.set('seatId3', j[2].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/coaches/{{coachId}}/seats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "coaches",
+                "{{coachId}}",
+                "seats"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List routes of train",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('5 stops in order', () => pm.expect(pm.response.json().map(r => r.stationCode)).to.eql(['MMCT','BRC','RTM','KOTA','NDLS']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{trainId}}/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{trainId}}",
+                "routes"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Journey info MMCT -> NDLS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('distance 1384', () => pm.expect(Number(pm.response.json().distanceKm)).to.eql(1384));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{trainId}}/journey-info?from=MMCT&to=NDLS",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{trainId}}",
+                "journey-info"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "MMCT"
+                },
+                {
+                  "key": "to",
+                  "value": "NDLS"
+                }
+              ]
+            },
+            "description": "Distance = 1384 - 0 = 1384 km; trainTypeId should be that of RAJDHANI."
+          }
+        },
+        {
+          "name": "Journey info MMCT -> BRC",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('distance 392', () => pm.expect(Number(pm.response.json().distanceKm)).to.eql(392));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{trainId}}/journey-info?from=MMCT&to=BRC",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{trainId}}",
+                "journey-info"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "MMCT"
+                },
+                {
+                  "key": "to",
+                  "value": "BRC"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Seat info",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('seat belongs to train', () => pm.expect(j.trainId).to.eql(Number(pm.collectionVariables.get('trainId'))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/seats/{{seatId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "seats",
+                "{{seatId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "NEGATIVE - journey info reversed stations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{trainId}}/journey-info?from=NDLS&to=MMCT",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{trainId}}",
+                "journey-info"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "NDLS"
+                },
+                {
+                  "key": "to",
+                  "value": "MMCT"
+                }
+              ]
+            },
+            "description": "Destination before origin -> 400."
+          }
+        },
+        {
+          "name": "NEGATIVE - unknown station",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{trainId}}/journey-info?from=MMCT&to=XXXX",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{trainId}}",
+                "journey-info"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "MMCT"
+                },
+                {
+                  "key": "to",
+                  "value": "XXXX"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "NEGATIVE - unknown train",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "999999"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Create train type",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('rand', Math.floor(Math.random() * 1e6));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('id assigned', () => pm.expect(pm.response.json().id).to.be.a('number'));",
+                  "pm.collectionVariables.set('newTrainTypeId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/train-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "train-types"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"TEST_{{rand}}\",\n  \"description\": \"Created by Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create coach type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/coach-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "coach-types"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"CC_{{rand}}\",\n  \"seatCapacity\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create train (saves newTrainId)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('newTrainNumber', 'T' + Math.floor(Math.random() * 1e8));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('newTrainId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainNumber\": \"{{newTrainNumber}}\",\n  \"name\": \"Postman Express\",\n  \"trainTypeId\": \"{{newTrainTypeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "NEGATIVE - create train with blank name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainNumber\": \"X1\",\n  \"name\": \"\",\n  \"trainTypeId\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Add coach to new train (generates seats)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('newCoachId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{newTrainId}}/coaches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{newTrainId}}",
+                "coaches"
+              ]
+            },
+            "description": "coachTypeId 3 = AC2 (48 seats). Seats are generated automatically.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"coachTypeId\": 3,\n  \"coachNumber\": \"H1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Verify generated seats (48)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('48 seats generated', () => pm.expect(pm.response.json().length).to.eql(48));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/coaches/{{newCoachId}}/seats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "coaches",
+                "{{newCoachId}}",
+                "seats"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Add route stop 1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{newTrainId}}/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{newTrainId}}",
+                "routes"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stopSequence\": 1,\n  \"stationCode\": \"AAA\",\n  \"stationName\": \"Alpha\",\n  \"distanceFromOriginKm\": 0,\n  \"arrivalTime\": \"08:00:00\",\n  \"departureTime\": \"08:05:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Add route stop 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{newTrainId}}/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{newTrainId}}",
+                "routes"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stopSequence\": 2,\n  \"stationCode\": \"BBB\",\n  \"stationName\": \"Beta\",\n  \"distanceFromOriginKm\": 250.5,\n  \"arrivalTime\": \"11:00:00\",\n  \"departureTime\": \"11:05:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "NEGATIVE - add route with stopSequence 0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{newTrainId}}/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{newTrainId}}",
+                "routes"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stopSequence\": 0,\n  \"stationCode\": \"CCC\",\n  \"stationName\": \"Gamma\",\n  \"distanceFromOriginKm\": 300\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Journey info on new train AAA -> BBB",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('distance 250.5', () => pm.expect(Number(pm.response.json().distanceKm)).to.eql(250.5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/trains/{{newTrainId}}/journey-info?from=AAA&to=BBB",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "trains",
+                "{{newTrainId}}",
+                "journey-info"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "AAA"
+                },
+                {
+                  "key": "to",
+                  "value": "BBB"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Fare Service (via gateway)",
+      "description": "Formula: total_fare = constant_fare + distance_km * fare_per_km.",
+      "item": [
+        {
+          "name": "List fare rules",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('9 seeded rules', () => pm.expect(pm.response.json().length).to.be.at.least(9));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/fares/rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fares",
+                "rules"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Calculate fare RAJDHANI / AC3 / 1384 km",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('constant fare 120', () => pm.expect(Number(j.constantFare)).to.eql(120));",
+                  "pm.test('fare per km 1.3', () => pm.expect(Number(j.farePerKm)).to.eql(1.3));",
+                  "pm.test('total fare 1919.20', () => pm.expect(Number(j.totalFare)).to.eql(1919.2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fares/calculate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fares",
+                "calculate"
+              ]
+            },
+            "description": "Seed rule: constant = 50+3*10+2*20 = 120, per km = 0.5+2*0.4 = 1.3 -> 120 + 1384*1.3 = 1919.20",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainTypeId\": 3,\n  \"coachTypeId\": 2,\n  \"distanceKm\": 1384\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Upsert fare rule (EXPRESS/SLEEPER)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('updated', () => pm.expect(Number(pm.response.json().constantFare)).to.eql(100));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fares/rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fares",
+                "rules"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainTypeId\": 1,\n  \"coachTypeId\": 1,\n  \"constantFare\": 100,\n  \"farePerKm\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Calculate with updated rule (100 km)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('total 200', () => pm.expect(Number(pm.response.json().totalFare)).to.eql(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fares/calculate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fares",
+                "calculate"
+              ]
+            },
+            "description": "100 + 100*1 = 200.00",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainTypeId\": 1,\n  \"coachTypeId\": 1,\n  \"distanceKm\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Restore original rule (EXPRESS/SLEEPER)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fares/rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fares",
+                "rules"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainTypeId\": 1,\n  \"coachTypeId\": 1,\n  \"constantFare\": 80,\n  \"farePerKm\": 0.9\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "NEGATIVE - unknown fare rule",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fares/calculate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fares",
+                "calculate"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainTypeId\": 99,\n  \"coachTypeId\": 99,\n  \"distanceKm\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "NEGATIVE - distance 0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fares/calculate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fares",
+                "calculate"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainTypeId\": 3,\n  \"coachTypeId\": 2,\n  \"distanceKm\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. SAGA happy path (booking -> payment -> confirmed -> read model)",
+      "description": "Run the requests IN ORDER. Each 'Get ...' request waits ~6 s so the async chain (outbox -> Debezium -> Kafka -> payment-service -> Kafka -> booking-command -> Kafka -> query) can finish.",
+      "item": [
+        {
+          "name": "3.1 Create booking (202, PAYMENT_PENDING)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date(); d.setDate(d.getDate() + 30 + Math.floor(Math.random() * 300));",
+                  "pm.collectionVariables.set('journeyDate', d.toISOString().slice(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 202', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('status PAYMENT_PENDING', () => pm.expect(j.status).to.eql('PAYMENT_PENDING'));",
+                  "pm.test('PNR is 10 digits', () => pm.expect(j.pnr).to.match(/^\\d{10}$/));",
+                  "pm.test('amount 1919.20', () => pm.expect(Number(j.totalAmount)).to.eql(1919.2));",
+                  "pm.collectionVariables.set('bookingId', j.bookingId);",
+                  "pm.collectionVariables.set('pnr', j.pnr);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "Pre-request picks a random journey date 30-330 days ahead so reruns never hit the seat-uniqueness rule. Writes bookings + saga_instances + 2 outbox rows (BookingCreated, PaymentRequested) in ONE transaction.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": {{seatId}},\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"{{journeyDate}}\",\n  \"passengerName\": \"Asha Rao\",\n  \"passengerEmail\": \"asha@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "3.2 Get booking - command side (expect CONFIRMED)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Give Debezium -> Kafka -> consumers time to run the SAGA step (async).",
+                  "setTimeout(function () {}, 6000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('CONFIRMED', () => pm.expect(pm.response.json().status).to.eql('CONFIRMED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": "Booking moved to CONFIRMED by the SAGA after PaymentCompleted arrived."
+          }
+        },
+        {
+          "name": "3.3 Get payment for booking (expect COMPLETED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('payment COMPLETED', () => pm.expect(j.status).to.eql('COMPLETED'));",
+                  "pm.test('amount matches', () => pm.expect(Number(j.amount)).to.eql(1919.2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/payments/booking/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "payments",
+                "booking",
+                "{{bookingId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "3.4 Query side - by bookingId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('status CONFIRMED', () => pm.expect(j.status).to.eql('CONFIRMED'));",
+                  "pm.test('paymentStatus PAID', () => pm.expect(j.paymentStatus).to.eql('PAID'));",
+                  "pm.test('route', () => pm.expect([j.fromStation, j.toStation]).to.eql(['MMCT','NDLS']));",
+                  "pm.test('passenger', () => pm.expect(j.passengerName).to.eql('Asha Rao'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/query/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "query",
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "3.5 Query side - by PNR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('same booking', () => pm.expect(pm.response.json().bookingId).to.eql(pm.collectionVariables.get('bookingId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/query/bookings/pnr/{{pnr}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "query",
+                "bookings",
+                "pnr",
+                "{{pnr}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "3.6 Query side - search by passenger name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().content.map(b => b.bookingId);",
+                  "pm.test('contains our booking', () => pm.expect(ids).to.include(pm.collectionVariables.get('bookingId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/query/bookings?passengerName=asha&page=0&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "query",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "passengerName",
+                  "value": "asha"
+                },
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "3.7 NEGATIVE - same seat + same date again (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "Partial unique index uq_active_seat rejects a second non-cancelled booking for the same train/date/seat.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": {{seatId}},\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"{{journeyDate}}\",\n  \"passengerName\": \"Another Person\",\n  \"passengerEmail\": \"asha@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. SAGA compensation - payment failure",
+      "description": "A passenger name starting with FAIL makes the simulated payment gateway decline. Run in order (after 3.1 so journeyDate is set).",
+      "item": [
+        {
+          "name": "4.1 Create booking that will fail payment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 202', () => pm.response.to.have.status(202));",
+                  "pm.collectionVariables.set('failBookingId', pm.response.json().bookingId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": \"{{seatId2}}\",\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"{{journeyDate}}\",\n  \"passengerName\": \"FAIL Tester\",\n  \"passengerEmail\": \"asha@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "4.2 Booking is CANCELLED (compensated)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Give Debezium -> Kafka -> consumers time to run the SAGA step (async).",
+                  "setTimeout(function () {}, 6000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('CANCELLED', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{failBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "{{failBookingId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "4.3 Payment is FAILED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('FAILED', () => pm.expect(j.status).to.eql('FAILED'));",
+                  "pm.test('reason', () => pm.expect(j.failureReason).to.eql('Card declined'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/payments/booking/{{failBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "payments",
+                "booking",
+                "{{failBookingId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "4.4 Query side reflects compensation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('status CANCELLED', () => pm.expect(j.status).to.eql('CANCELLED'));",
+                  "pm.test('paymentStatus FAILED', () => pm.expect(j.paymentStatus).to.eql('FAILED'));",
+                  "pm.test('reason recorded', () => pm.expect(j.cancellationReason).to.include('Payment failed'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/query/bookings/{{failBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "query",
+                "bookings",
+                "{{failBookingId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "4.5 Seat is released - rebook same seat (202)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "The cancelled booking no longer holds the seat, so the partial unique index allows a new booking.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": \"{{seatId2}}\",\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"{{journeyDate}}\",\n  \"passengerName\": \"Seat Reuse\",\n  \"passengerEmail\": \"asha@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Customer cancellation and refund",
+      "description": "Confirms a booking, cancels it, and verifies payment-service refunds it.",
+      "item": [
+        {
+          "name": "5.1 Create booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 202', () => pm.response.to.have.status(202));",
+                  "pm.collectionVariables.set('cancelBookingId', pm.response.json().bookingId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": \"{{seatId3}}\",\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"{{journeyDate}}\",\n  \"passengerName\": \"Refund Tester\",\n  \"passengerEmail\": \"asha@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "5.2 Wait for CONFIRMED",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Give Debezium -> Kafka -> consumers time to run the SAGA step (async).",
+                  "setTimeout(function () {}, 6000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('CONFIRMED', () => pm.expect(pm.response.json().status).to.eql('CONFIRMED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{cancelBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "{{cancelBookingId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "5.3 Cancel booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('CANCELLED', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{cancelBookingId}}/cancel?reason=Change of plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "{{cancelBookingId}}",
+                "cancel"
+              ],
+              "query": [
+                {
+                  "key": "reason",
+                  "value": "Change of plans"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "5.4 Payment is REFUNDED",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Give Debezium -> Kafka -> consumers time to run the SAGA step (async).",
+                  "setTimeout(function () {}, 6000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('REFUNDED', () => pm.expect(pm.response.json().status).to.eql('REFUNDED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/payments/booking/{{cancelBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "payments",
+                "booking",
+                "{{cancelBookingId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "5.5 Query side shows CANCELLED + REFUNDED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('CANCELLED', () => pm.expect(j.status).to.eql('CANCELLED'));",
+                  "pm.test('REFUNDED', () => pm.expect(j.paymentStatus).to.eql('REFUNDED'));",
+                  "pm.test('reason', () => pm.expect(j.cancellationReason).to.eql('Change of plans'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/query/bookings/{{cancelBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "query",
+                "bookings",
+                "{{cancelBookingId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "5.6 NEGATIVE - cancel again (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{cancelBookingId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "{{cancelBookingId}}",
+                "cancel"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Validation and error handling",
+      "description": "Independent negative tests; run in any order.",
+      "item": [
+        {
+          "name": "Empty body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Past journey date",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": {{seatId}},\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"2020-01-01\",\n  \"passengerName\": \"Past\",\n  \"passengerEmail\": \"asha@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Invalid email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": {{seatId}},\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"2030-01-01\",\n  \"passengerName\": \"Bad Email\",\n  \"passengerEmail\": \"not-an-email\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Seat does not belong to train (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "Train 2 has no coaches; seat belongs to train 1.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": 2,\n  \"seatId\": {{seatId}},\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"2030-01-01\",\n  \"passengerName\": \"Wrong Train\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unknown seat (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": 999999,\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"2030-01-01\",\n  \"passengerName\": \"No Seat\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Reversed stations (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": {{seatId}},\n  \"fromStation\": \"NDLS\",\n  \"toStation\": \"MMCT\",\n  \"journeyDate\": \"2030-01-01\",\n  \"passengerName\": \"Reverse\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unknown booking - command side",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Unknown booking - query side",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/query/bookings/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "query",
+                "bookings",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Unknown PNR - query side",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/query/bookings/pnr/0000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "query",
+                "bookings",
+                "pnr",
+                "0000000000"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Payment for unknown booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/payments/booking/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "payments",
+                "booking",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Resilience and observability (gateway)",
+      "description": "Rate limiting, circuit breaker/fallback, retry and metrics.",
+      "item": [
+        {
+          "name": "Rate limit probe (use Collection Runner)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 429', () => pm.expect([200, 429]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) pm.test('X-RateLimit-Remaining header present', () => pm.response.to.have.header('X-RateLimit-Remaining'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/catalog/train-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "catalog",
+                "train-types"
+              ]
+            },
+            "description": "Run this single request in the Collection Runner: 300 iterations, delay 0 ms. Limit is 50 req/s with burst 100 per client IP, so some responses become 429. Successful responses carry X-RateLimit-* headers."
+          }
+        },
+        {
+          "name": "Circuit breaker / retry fallback (stop fare-service first)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 503', () => pm.response.to.have.status(503));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "MANUAL: run `docker compose stop fare-service`, then send this. booking-command retries 3x (exponential back-off), the circuit breaker records failures, and the fallback returns 503. Restore with `docker compose start fare-service`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": {{seatId}},\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"2031-05-05\",\n  \"passengerName\": \"Resilience Test\",\n  \"passengerEmail\": \"asha@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Gateway fallback (stop booking-command-service first)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 503', () => pm.response.to.have.status(503));",
+                  "pm.test('fallback body', () => pm.expect(pm.response.json().service).to.eql('booking'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "MANUAL: `docker compose stop booking-command-service`, send this. The gateway CircuitBreaker filter forwards to /fallback/booking and returns a JSON 503 body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainId\": {{trainId}},\n  \"seatId\": {{seatId}},\n  \"fromStation\": \"MMCT\",\n  \"toStation\": \"NDLS\",\n  \"journeyDate\": \"2031-05-06\",\n  \"passengerName\": \"Gateway Fallback\",\n  \"passengerEmail\": \"asha@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Prometheus gateway metrics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('gateway metrics exposed', () => pm.expect(pm.response.text()).to.include('spring_cloud_gateway'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/prometheus",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "prometheus"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Circuit breaker events metric",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "metrics"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "eurekaUrl",
+      "value": "http://localhost:8761"
+    },
+    {
+      "key": "connectUrl",
+      "value": "http://localhost:8089"
+    },
+    {
+      "key": "trainId",
+      "value": "1"
+    },
+    {
+      "key": "coachId",
+      "value": "1"
+    },
+    {
+      "key": "seatId",
+      "value": "1"
+    },
+    {
+      "key": "seatId2",
+      "value": "2"
+    },
+    {
+      "key": "seatId3",
+      "value": "3"
+    },
+    {
+      "key": "journeyDate",
+      "value": "2030-01-01"
+    },
+    {
+      "key": "bookingId",
+      "value": ""
+    },
+    {
+      "key": "pnr",
+      "value": ""
+    },
+    {
+      "key": "failBookingId",
+      "value": ""
+    },
+    {
+      "key": "cancelBookingId",
+      "value": ""
+    },
+    {
+      "key": "rand",
+      "value": "0"
+    },
+    {
+      "key": "newTrainTypeId",
+      "value": ""
+    },
+    {
+      "key": "newTrainNumber",
+      "value": ""
+    },
+    {
+      "key": "newTrainId",
+      "value": ""
+    },
+    {
+      "key": "newCoachId",
+      "value": ""
+    }
+  ]
+}
